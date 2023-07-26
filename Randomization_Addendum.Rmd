@@ -1,0 +1,101 @@
+---
+title: "Randomization Addendum to Population Analysis"
+author: "Greg Pollock"
+date: "10/9/2020"
+output: word_document
+---
+
+```{r, message=FALSE, echo=FALSE}
+library(tidyverse)
+library(scales)
+library(utils)
+
+data <- read_csv("Japan_population_data.csv")
+data <- data[data$year > 1955,] #at this stage years are decimals, so this does include 1955 
+data <- data[data$region == "Tohoku" | data$region == "Kyushu",]
+
+north <- data[data$region == "Tohoku",]
+south <- data[data$region == "Kyushu",]
+
+tohoku <- aggregate(north$population, by = list(north$year), FUN = mean)
+colnames(tohoku) <- c("Year", "Population")
+tohoku$Year <- floor(tohoku$Year) 
+tohoku$Region <- "Tohoku (North)"
+
+kyushu <- aggregate(south$population, by = list(south$year), FUN = mean)
+colnames(kyushu) <- c("Year", "Population")
+kyushu$Year <- floor(kyushu$Year)
+kyushu$Region <- "Kyushu (South)"
+
+df <- rbind(tohoku, kyushu)
+#df #Here is the finished dataframe that will be analyzed
+
+```
+
+```{r, include=FALSE}
+choose(26,13)
+```
+
+##Introduction and Methodology
+
+To take an alternate approach in analyzing this data in another way that doesn't rely on any assumptions of normality, we will conduct a randomized resampling analysis which will restrict the sample space to the observed values. In the case of this dataset there are ${26}\choose{13}$$=10,400,600$ ways to group the population measurements into two groups. One resampling method is a permutation test which would be to consider every possible arrangement of the data values in two groups and find where the observed data fits in relation to this set of all possible arrangements. Since this entire sample space can't be easily expressed, stored or accessed given its spatial complexity, we are forced to either take random samples from the set of all possible groupings and end up with an approximation of a p-value, or we can use a bootstrapping method.  
+Bootstrapping is a resampling method when random samples are taken with replacement. Given that bootstrapping methods don't need any assumption of mutual exclusivity between observations, we will use it rather than approximating the sample space. For these reasons, the bootstrapping method of sampling is better than parametric tests and permutation tests in this situation and is comparable to the nonparametric Wilcoxon test because of the few required assumptions that need to be met, namely that the observations are independent and identically distributed.
+
+##Statistics
+As was previously explained, a bootstrapping analysis will be done to test for the significance of the observed data. The statistic we will use is the difference in mean because we're interested in whether or not there is a difference in the prefectures' population counts. This means that we will generate samples of size 26 with replacement and then split these into two groups where a difference in means will be calculated. At this point we can compare our observed difference in mean to the generated distribution.
+
+```{r, include=FALSE}
+set.seed(10920534)
+perm_test_diff_mn <- function(v1, v2, replace = FALSE) {
+  all <- c(v1, v2)
+  smp <- sample(all, length(all)) #samples without replacement. Essentially it mixes up the groups and lines them up.
+  new_v1 <- smp[1:length(v1)]    #take the first half
+  new_v2 <- smp[(length(v1)+1): length(all)] #take the second half
+  
+  return (mean(new_v2) - mean(new_v1)) #return difference of means
+}
+tru_diff_mn <- mean(kyushu$Population) - mean(tohoku$Population)
+reps_f <- replicate(10000, perm_test_diff_mn(tohoku$Population, kyushu$Population, replace = FALSE))
+reps_t <- replicate(10000, perm_test_diff_mn(tohoku$Population, kyushu$Population, replace = TRUE))
+```
+##Results
+```{r, echo=FALSE}
+p <- ggplot(data.frame(reps_f), aes(x = reps_f))
+perm_plt <- p + 
+  geom_density() +
+  geom_vline(xintercept = tru_diff_mn, col = "red")+
+  theme_bw() +
+  xlab("Difference in Population Means") +
+  ylab("Density") +
+  labs(title = "?", caption = "Red line indicates observed difference in means") +
+  scale_y_continuous(label = comma, limits = c(0, .0000089)) + 
+  scale_x_continuous(limits = c(-200000, 200000), label = comma)
+
+q <- ggplot(data.frame(reps_t), aes(x = reps_t))
+q + 
+  geom_density() +
+  geom_vline(xintercept = tru_diff_mn, col = "red")+
+  theme_bw() +
+  xlab("Difference in Population Means") +
+  ylab("Density") +
+  labs(title = "Density Plot of 10,000 Bootstrap samples", caption = "Red line indicates observed difference in means") +
+  scale_y_continuous(label = comma, limits = c(0, .0000089)) + 
+  scale_x_continuous(limits = c(-200000, 200000), label = comma)
+
+```
+
+```{r, include=FALSE}
+perc99 <- quantile(reps_f, .99)
+tru_diff_mn - perc99
+```
+As we can see from the density plot of 10,000 bootstrap samples along with the red line indicating the observed difference in means from the data, there is a significant difference in means. Another result that was found was that the difference between the $99^{th}$ percentile and our observed difference in means was positive meaning that our observed difference in means was more extreme than the $99^{th}$ percentile and thus significant.
+
+##Conclusion
+The bootstrapping technique used in the end further justifies the claim that there exists a difference in average population counts between the two Japanese prefectures studied. Should greater computing resources be attained, an exact p-value could be found through a permutation analysis on the entire sample space.
+
+
+
+
+
+
+
